@@ -2,6 +2,40 @@
 
 Run [Moltbot](https://molt.bot/) personal AI assistant in a [Cloudflare Sandbox](https://developers.cloudflare.com/sandbox/).
 
+## Architecture
+
+```
+Browser / CLI
+     │
+     ▼
+┌─────────────────────────────────────┐
+│     Cloudflare Worker               │
+│  - Starts Moltbot in sandbox        │
+│  - Proxies HTTP/WebSocket requests  │
+│  - Manages R2 backup/restore        │
+│  - Admin UI at /_admin/             │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│     Cloudflare Sandbox Container    │
+│  ┌───────────────────────────────┐  │
+│  │     Moltbot Gateway           │  │
+│  │  - Control UI on port 18789   │  │
+│  │  - WebSocket RPC protocol     │  │
+│  │  - Agent runtime              │  │
+│  └───────────────────────────────┘  │
+└─────────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│     R2 Storage (Optional)           │
+│  - Persistent config & data         │
+│  - Conversation history             │
+│  - Paired device list               │
+└─────────────────────────────────────┘
+```
+
 ## Quick Start
 
 _Cloudflare Sandboxes are available on the [Workers Paid plan](https://dash.cloudflare.com/?to=/:account/workers/plans)._
@@ -136,7 +170,7 @@ By default, moltbot data (configs, paired devices, conversation history) is lost
 1. Go to **R2** > **Overview** in the [Cloudflare Dashboard](https://dash.cloudflare.com/)
 2. Click **Manage R2 API Tokens**
 3. Create a new token with **Object Read & Write** permissions
-4. Select the `moltbot-data` bucket (created automatically on first deploy)
+4. Select the `clawdbot-data` bucket (created automatically on first deploy)
 5. Copy the **Access Key ID** and **Secret Access Key**
 
 ### 2. Set Secrets
@@ -159,11 +193,11 @@ To find your Account ID: Go to the [Cloudflare Dashboard](https://dash.cloudflar
 R2 storage uses a backup/restore approach for simplicity:
 
 **On container startup:**
-- If R2 is mounted and contains backup data, it's restored to `/root/.moltbot`
+- If R2 is mounted and contains backup data, it's restored to `/root/.clawdbot`
 - Moltbot uses its default paths (no special configuration needed)
 
 **During operation:**
-- A cron job runs every 5 minutes to sync `/root/.moltbot` → R2
+- A cron job runs every 5 minutes to sync `/root/.clawdbot` → R2
 - You can also trigger a manual backup from the admin UI at `/_admin/`
 
 **In the admin UI:**
@@ -226,6 +260,43 @@ npx wrangler secret put SLACK_APP_TOKEN
 npm run deploy
 ```
 
+## Optional: Browser Automation (CDP)
+
+This worker includes a Chrome DevTools Protocol (CDP) shim that enables browser automation capabilities. This allows Moltbot to control a headless browser for tasks like web scraping, screenshots, and automated testing.
+
+### Setup
+
+1. Set a shared secret for authentication:
+
+```bash
+npx wrangler secret put CDP_SECRET
+# Enter a secure random string
+```
+
+2. Set your worker's public URL:
+
+```bash
+npx wrangler secret put WORKER_URL
+# Enter: https://your-worker.workers.dev
+```
+
+3. Redeploy:
+
+```bash
+npm run deploy
+```
+
+### Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /cdp/json/version` | Browser version information |
+| `GET /cdp/json/list` | List available browser targets |
+| `GET /cdp/json/new` | Create a new browser target |
+| `WS /cdp/devtools/browser/{id}` | WebSocket connection for CDP commands |
+
+All endpoints require the `CDP_SECRET` header for authentication.
+
 ## Optional: Cloudflare AI Gateway
 
 You can route Anthropic API requests through [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) for unified billing, caching, rate limiting, analytics, and cost tracking.
@@ -250,8 +321,9 @@ npm run deploy
 
 | Secret | Required | Description |
 |--------|----------|-------------|
-0| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
-| `ANTHROPIC_BASE_URL` | No | Custom Anthropic API base URL (e.g., for [Cloudflare AI Gateway](#cloudflare-ai-gateway)) |
+| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
+| `ANTHROPIC_BASE_URL` | No | Custom Anthropic API base URL (e.g., for [Cloudflare AI Gateway](#optional-cloudflare-ai-gateway)) |
+| `OPENAI_API_KEY` | No | OpenAI API key (alternative to Anthropic) |
 | `CF_ACCESS_TEAM_DOMAIN` | Yes* | Cloudflare Access team domain (required for admin UI) |
 | `CF_ACCESS_AUD` | Yes* | Cloudflare Access application audience (required for admin UI) |
 | `CLAWDBOT_GATEWAY_TOKEN` | Yes | Gateway token for authentication (pass via `?token=` query param) |
@@ -260,11 +332,15 @@ npm run deploy
 | `SANDBOX_SLEEP_AFTER` | No | Container sleep timeout: `never` (default) or duration like `10m`, `1h` |
 | `R2_ACCESS_KEY_ID` | No | R2 access key for persistent storage |
 | `R2_SECRET_ACCESS_KEY` | No | R2 secret key for persistent storage |
-| `CF_ACCOUNT_ID` | No | Cloudflare account ID for R2 |
+| `CF_ACCOUNT_ID` | No | Cloudflare account ID (required for R2 storage) |
 | `TELEGRAM_BOT_TOKEN` | No | Telegram bot token |
+| `TELEGRAM_DM_POLICY` | No | Telegram DM policy: `pairing` (default) or `open` |
 | `DISCORD_BOT_TOKEN` | No | Discord bot token |
+| `DISCORD_DM_POLICY` | No | Discord DM policy: `pairing` (default) or `open` |
 | `SLACK_BOT_TOKEN` | No | Slack bot token |
 | `SLACK_APP_TOKEN` | No | Slack app token |
+| `CDP_SECRET` | No | Shared secret for CDP endpoint authentication (see [Browser Automation](#optional-browser-automation-cdp)) |
+| `WORKER_URL` | No | Public URL of the worker (required for CDP) |
 
 ## Troubleshooting
 
@@ -279,6 +355,10 @@ npm run deploy
 **R2 not mounting:** Check that all three R2 secrets are set (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `CF_ACCOUNT_ID`). Note: R2 mounting only works in production, not with `wrangler dev`.
 
 **Access denied on admin routes:** Ensure `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set, and that your Cloudflare Access application is configured correctly.
+
+**Devices not appearing in admin UI:** Device list commands take 10-15 seconds due to WebSocket connection overhead. Wait and refresh.
+
+**WebSocket issues in local development:** `wrangler dev` has known limitations with WebSocket proxying through the sandbox. HTTP requests work but WebSocket connections may fail. Deploy to Cloudflare for full functionality.
 
 ## Links
 
