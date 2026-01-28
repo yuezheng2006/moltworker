@@ -46,32 +46,17 @@ if [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$R2_A
         echo "R2 bucket already mounted at $R2_MOUNT_PATH"
     else
         echo "Mounting R2 bucket to $R2_MOUNT_PATH..."
-        # tigrisfs args: --endpoint <url> <bucket> <mountpoint>
-        # Use -f (foreground) and & to keep it running in background within this process tree
-        # Also add --debug for troubleshooting
-        /usr/local/bin/tigrisfs --endpoint "$R2_ENDPOINT" --debug -f "$R2_BUCKET_NAME" "$R2_MOUNT_PATH" 2>&1 | while read line; do echo "[tigrisfs] $line"; done &
-        TIGRISFS_PID=$!
-        echo "Started tigrisfs with PID $TIGRISFS_PID"
+        # tigrisfs: -f runs in foreground, & backgrounds it in shell
+        # This matches the recommended pattern from Cloudflare docs
+        /usr/local/bin/tigrisfs --endpoint "$R2_ENDPOINT" -f "$R2_BUCKET_NAME" "$R2_MOUNT_PATH" &
         
-        # Wait for mount to be ready
-        for i in {1..15}; do
-            if mount | grep -q "$R2_MOUNT_PATH"; then
-                echo "R2 bucket mounted successfully"
-                break
-            fi
-            echo "Waiting for mount... ($i/15)"
-            sleep 1
-        done
+        # Wait for mount (simple sleep like docs example)
+        sleep 5
         
-        # Check mount status
-        echo "Mount status:"
-        mount | grep -E "(fuse|$R2_MOUNT_PATH)" || echo "No FUSE mounts found"
-        
-        if ! mount | grep -q "$R2_MOUNT_PATH"; then
-            echo "WARNING: Failed to mount R2 bucket, continuing without persistence"
-            echo "Check if tigrisfs process is running:"
-            ps aux | grep tigrisfs || echo "tigrisfs not running"
-        fi
+        # Verify mount
+        echo "Mount status after sleep:"
+        mount | grep fuse || echo "No FUSE mounts found"
+        ls -la "$R2_MOUNT_PATH" 2>/dev/null && echo "Mount appears successful" || echo "Mount directory not accessible"
     fi
     
     # If R2 is mounted, use it for clawdbot config
