@@ -1,6 +1,6 @@
 FROM docker.io/cloudflare/sandbox:0.7.0
 
-# Install Node.js 22 (required by clawdbot) and rsync (for R2 backup sync)
+# Install Node.js 22 (required by openclaw) and rsync (for R2 backup sync)
 # The base image has Node 20, we need to replace it with Node 22
 # Using direct binary download for reliability
 ENV NODE_VERSION=22.13.1
@@ -14,25 +14,33 @@ RUN apt-get update && apt-get install -y xz-utils ca-certificates rsync \
 # Install pnpm globally
 RUN npm install -g pnpm
 
-# Install moltbot (CLI is still named clawdbot until upstream renames)
+# Install openclaw (renamed from clawdbot as of 2026.1.29)
 # Pin to specific version for reproducible builds
-RUN npm install -g clawdbot@2026.1.24-3 \
-    && clawdbot --version
+RUN npm install -g openclaw@2026.1.29 \
+    && openclaw --version
 
-# Create moltbot directories (paths still use clawdbot until upstream renames)
-# Templates are stored in /root/.clawdbot-templates for initialization
-RUN mkdir -p /root/.clawdbot \
-    && mkdir -p /root/.clawdbot-templates \
+# Create openclaw directories
+# OpenClaw auto-migrates from ~/.clawdbot to ~/.openclaw
+# Templates are stored in /root/.openclaw-templates for initialization
+RUN mkdir -p /root/.openclaw \
+    && mkdir -p /root/.openclaw-templates \
+    && mkdir -p /root/.openclaw/extensions \
     && mkdir -p /root/clawd \
     && mkdir -p /root/clawd/skills
 
+# Download and install clawdbot-bridge for Feishu long connection
+# v0.2.0 is compatible with openclaw
+RUN curl -sLO https://github.com/wy51ai/moltbotCNAPP/releases/latest/download/clawdbot-bridge-linux-amd64 \
+    && mv clawdbot-bridge-linux-amd64 /usr/local/bin/clawdbot-bridge \
+    && chmod +x /usr/local/bin/clawdbot-bridge
+
 # Copy startup script
-# Build cache bust: 2026-01-28-v26-browser-skill
+# Build cache bust: 2026-01-30-v39-migrate-to-openclaw
 COPY start-moltbot.sh /usr/local/bin/start-moltbot.sh
 RUN chmod +x /usr/local/bin/start-moltbot.sh
 
 # Copy default configuration template
-COPY moltbot.json.template /root/.clawdbot-templates/moltbot.json.template
+COPY moltbot.json.template /root/.openclaw-templates/openclaw.json.template
 
 # Copy custom skills
 COPY skills/ /root/clawd/skills/

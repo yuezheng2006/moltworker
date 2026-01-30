@@ -1,11 +1,11 @@
 /**
- * Configuration constants for Moltbot Sandbox
+ * Configuration constants for OpenClaw Sandbox
  */
 
-/** Port that the Moltbot gateway listens on inside the container */
+/** Port that the OpenClaw gateway listens on inside the container */
 export const MOLTBOT_PORT = 18789;
 
-/** Maximum time to wait for Moltbot to start (3 minutes) */
+/** Maximum time to wait for OpenClaw to start (3 minutes) */
 export const STARTUP_TIMEOUT_MS = 180_000;
 
 /** Mount path for R2 persistent storage inside the container */

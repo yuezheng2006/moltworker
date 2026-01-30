@@ -53,6 +53,10 @@ export function buildEnvVars(env: MoltbotEnv): Record<string, string> {
   if (env.DISCORD_DM_POLICY) envVars.DISCORD_DM_POLICY = env.DISCORD_DM_POLICY;
   if (env.SLACK_BOT_TOKEN) envVars.SLACK_BOT_TOKEN = env.SLACK_BOT_TOKEN;
   if (env.SLACK_APP_TOKEN) envVars.SLACK_APP_TOKEN = env.SLACK_APP_TOKEN;
+  // Feishu (Lark) configuration
+  if (env.FEISHU_APP_ID) envVars.FEISHU_APP_ID = env.FEISHU_APP_ID;
+  if (env.FEISHU_APP_SECRET) envVars.FEISHU_APP_SECRET = env.FEISHU_APP_SECRET;
+  if (env.FEISHU_DM_POLICY) envVars.FEISHU_DM_POLICY = env.FEISHU_DM_POLICY;
   if (env.CDP_SECRET) envVars.CDP_SECRET = env.CDP_SECRET;
   if (env.WORKER_URL) envVars.WORKER_URL = env.WORKER_URL;
 

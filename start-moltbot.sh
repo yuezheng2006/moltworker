@@ -1,25 +1,24 @@
 #!/bin/bash
-# Startup script for Moltbot in Cloudflare Sandbox
+# Startup script for OpenClaw (formerly Moltbot) in Cloudflare Sandbox
 # This script:
 # 1. Restores config from R2 backup if available
-# 2. Configures moltbot from environment variables
+# 2. Configures openclaw from environment variables
 # 3. Starts a background sync to backup config to R2
 # 4. Starts the gateway
 
 set -e
 
-# Check if clawdbot gateway is already running - bail early if so
-# Note: CLI is still named "clawdbot" until upstream renames it
-if pgrep -f "clawdbot gateway" > /dev/null 2>&1; then
-    echo "Moltbot gateway is already running, exiting."
+# Check if openclaw gateway is already running - bail early if so
+if pgrep -f "openclaw gateway" > /dev/null 2>&1; then
+    echo "OpenClaw gateway is already running, exiting."
     exit 0
 fi
 
-# Paths (clawdbot paths are used internally - upstream hasn't renamed yet)
-CONFIG_DIR="/root/.clawdbot"
-CONFIG_FILE="$CONFIG_DIR/clawdbot.json"
-TEMPLATE_DIR="/root/.clawdbot-templates"
-TEMPLATE_FILE="$TEMPLATE_DIR/moltbot.json.template"
+# Paths (openclaw uses ~/.openclaw as of 2026.1.29)
+CONFIG_DIR="/root/.openclaw"
+CONFIG_FILE="$CONFIG_DIR/openclaw.json"
+TEMPLATE_DIR="/root/.openclaw-templates"
+TEMPLATE_FILE="$TEMPLATE_DIR/openclaw.json.template"
 BACKUP_DIR="/data/moltbot"
 
 echo "Config directory: $CONFIG_DIR"
@@ -31,9 +30,10 @@ mkdir -p "$CONFIG_DIR"
 # ============================================================
 # RESTORE FROM R2 BACKUP
 # ============================================================
-# Check if R2 backup exists by looking for clawdbot.json
+# Check if R2 backup exists by looking for openclaw.json (or legacy clawdbot.json)
 # The BACKUP_DIR may exist but be empty if R2 was just mounted
-# Note: backup structure is $BACKUP_DIR/clawdbot/ and $BACKUP_DIR/skills/
+# Note: backup structure is $BACKUP_DIR/openclaw/ and $BACKUP_DIR/skills/
+# Legacy support: also checks $BACKUP_DIR/clawdbot/ for pre-rename backups
 
 # Helper function to check if R2 backup is newer than local
 should_restore_from_r2() {
@@ -72,21 +72,45 @@ should_restore_from_r2() {
     fi
 }
 
-if [ -f "$BACKUP_DIR/clawdbot/clawdbot.json" ]; then
+if [ -f "$BACKUP_DIR/openclaw/openclaw.json" ]; then
     if should_restore_from_r2; then
-        echo "Restoring from R2 backup at $BACKUP_DIR/clawdbot..."
-        cp -a "$BACKUP_DIR/clawdbot/." "$CONFIG_DIR/"
+        echo "Restoring from R2 backup at $BACKUP_DIR/openclaw..."
+        cp -a "$BACKUP_DIR/openclaw/." "$CONFIG_DIR/"
         # Copy the sync timestamp to local so we know what version we have
         cp -f "$BACKUP_DIR/.last-sync" "$CONFIG_DIR/.last-sync" 2>/dev/null || true
         echo "Restored config from R2 backup"
     fi
-elif [ -f "$BACKUP_DIR/clawdbot.json" ]; then
+elif [ -f "$BACKUP_DIR/openclaw.json" ]; then
     # Legacy backup format (flat structure)
     if should_restore_from_r2; then
-        echo "Restoring from legacy R2 backup at $BACKUP_DIR..."
+        echo "Restoring from flat R2 backup at $BACKUP_DIR..."
         cp -a "$BACKUP_DIR/." "$CONFIG_DIR/"
         cp -f "$BACKUP_DIR/.last-sync" "$CONFIG_DIR/.last-sync" 2>/dev/null || true
-        echo "Restored config from legacy R2 backup"
+        echo "Restored config from flat R2 backup"
+    fi
+elif [ -f "$BACKUP_DIR/clawdbot/clawdbot.json" ]; then
+    # Legacy clawdbot backup format (pre-openclaw rename)
+    if should_restore_from_r2; then
+        echo "Migrating from legacy clawdbot R2 backup..."
+        cp -a "$BACKUP_DIR/clawdbot/." "$CONFIG_DIR/"
+        # Rename config file if needed
+        if [ -f "$CONFIG_DIR/clawdbot.json" ] && [ ! -f "$CONFIG_DIR/openclaw.json" ]; then
+            mv "$CONFIG_DIR/clawdbot.json" "$CONFIG_DIR/openclaw.json"
+        fi
+        cp -f "$BACKUP_DIR/.last-sync" "$CONFIG_DIR/.last-sync" 2>/dev/null || true
+        echo "Migrated config from legacy clawdbot backup"
+    fi
+elif [ -f "$BACKUP_DIR/clawdbot.json" ]; then
+    # Legacy clawdbot flat backup format
+    if should_restore_from_r2; then
+        echo "Migrating from legacy clawdbot flat R2 backup..."
+        cp -a "$BACKUP_DIR/." "$CONFIG_DIR/"
+        # Rename config file if needed
+        if [ -f "$CONFIG_DIR/clawdbot.json" ] && [ ! -f "$CONFIG_DIR/openclaw.json" ]; then
+            mv "$CONFIG_DIR/clawdbot.json" "$CONFIG_DIR/openclaw.json"
+        fi
+        cp -f "$BACKUP_DIR/.last-sync" "$CONFIG_DIR/.last-sync" 2>/dev/null || true
+        echo "Migrated config from legacy clawdbot flat backup"
     fi
 elif [ -d "$BACKUP_DIR" ]; then
     echo "R2 mounted at $BACKUP_DIR but no backup data found yet"
@@ -136,7 +160,7 @@ fi
 node << EOFNODE
 const fs = require('fs');
 
-const configPath = '/root/.clawdbot/clawdbot.json';
+const configPath = '/root/.openclaw/openclaw.json';
 console.log('Updating config at:', configPath);
 let config = {};
 
@@ -152,6 +176,8 @@ config.agents.defaults = config.agents.defaults || {};
 config.agents.defaults.model = config.agents.defaults.model || {};
 config.gateway = config.gateway || {};
 config.channels = config.channels || {};
+config.plugins = config.plugins || {};
+config.plugins.entries = config.plugins.entries || {};
 
 // Clean up any broken anthropic provider config from previous runs
 // (older versions didn't include required 'name' field)
@@ -208,34 +234,73 @@ if (process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) {
     config.channels.slack.enabled = true;
 }
 
+// Clean up old plugin configurations that may cause conflicts
+if (config.plugins && config.plugins.entries) {
+    // Remove old plugin configs (if exists)
+    if (config.plugins.entries['moltbot-feishu']) {
+        console.log('Removing old moltbot-feishu plugin config...');
+        delete config.plugins.entries['moltbot-feishu'];
+    }
+}
+
+// Note: Feishu (Lark) is handled by clawdbot-bridge, not as a native channel
+// The bridge connects to the gateway websocket and forwards messages from Feishu
+// Remove any existing feishu channel config that may have been saved from previous deployments
+if (config.channels && config.channels.feishu) {
+    console.log('Removing legacy feishu channel config (now handled by clawdbot-bridge)');
+    delete config.channels.feishu;
+}
+
 // Base URL override (e.g., for Cloudflare AI Gateway)
 // Usage: Set AI_GATEWAY_BASE_URL or ANTHROPIC_BASE_URL to your endpoint like:
 //   https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/anthropic
 //   https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/openai
+//   https://api.minimaxi.com/anthropic (MiniMax Coding Plan - Anthropic compatible)
 const baseUrl = (process.env.AI_GATEWAY_BASE_URL || process.env.ANTHROPIC_BASE_URL || '').replace(/\/+$/, '');
 const isOpenAI = baseUrl.endsWith('/openai');
+const isMiniMax = baseUrl.includes('minimaxi.com') || baseUrl.includes('minimax.chat');
 
-if (isOpenAI) {
-    // Create custom openai provider config with baseUrl override
-    // Omit apiKey so moltbot falls back to OPENAI_API_KEY env var
-    console.log('Configuring OpenAI provider with base URL:', baseUrl);
+if (isMiniMax) {
+    // MiniMax Coding Plan uses Anthropic-compatible API
+    console.log('Configuring MiniMax (Anthropic-compatible) provider with base URL:', baseUrl);
+    config.models = config.models || {};
+    config.models.providers = config.models.providers || {};
+    const providerConfig = {
+        baseUrl: baseUrl,
+        api: 'anthropic-messages',
+        models: [
+            { id: 'MiniMax-M2.1', name: 'MiniMax M2.1', contextWindow: 200000 },
+            { id: 'MiniMax-M2', name: 'MiniMax M2', contextWindow: 200000 },
+        ]
+    };
+    // Include API key in provider config
+    if (process.env.ANTHROPIC_API_KEY) {
+        providerConfig.apiKey = process.env.ANTHROPIC_API_KEY;
+    }
+    config.models.providers.minimax = providerConfig;
+    // Add models to the allowlist so they appear in /models
+    config.agents.defaults.models = config.agents.defaults.models || {};
+    config.agents.defaults.models['minimax/MiniMax-M2.1'] = { alias: 'MiniMax M2.1' };
+    config.agents.defaults.models['minimax/MiniMax-M2'] = { alias: 'MiniMax M2' };
+    config.agents.defaults.model.primary = 'minimax/MiniMax-M2.1';
+} else if (isOpenAI) {
+    // OpenAI-compatible providers
+    console.log('Configuring OpenAI-compatible provider with base URL:', baseUrl);
     config.models = config.models || {};
     config.models.providers = config.models.providers || {};
     config.models.providers.openai = {
         baseUrl: baseUrl,
         api: 'openai-responses',
         models: [
-            { id: 'gpt-5.2', name: 'GPT-5.2', contextWindow: 200000 },
-            { id: 'gpt-5', name: 'GPT-5', contextWindow: 200000 },
-            { id: 'gpt-4.5-preview', name: 'GPT-4.5 Preview', contextWindow: 128000 },
+            { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000 },
+            { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', contextWindow: 128000 },
         ]
     };
     // Add models to the allowlist so they appear in /models
     config.agents.defaults.models = config.agents.defaults.models || {};
-    config.agents.defaults.models['openai/gpt-5.2'] = { alias: 'GPT-5.2' };
-    config.agents.defaults.models['openai/gpt-5'] = { alias: 'GPT-5' };
-    config.agents.defaults.models['openai/gpt-4.5-preview'] = { alias: 'GPT-4.5' };
-    config.agents.defaults.model.primary = 'openai/gpt-5.2';
+    config.agents.defaults.models['openai/gpt-4o'] = { alias: 'GPT-4o' };
+    config.agents.defaults.models['openai/gpt-4-turbo'] = { alias: 'GPT-4 Turbo' };
+    config.agents.defaults.model.primary = 'openai/gpt-4o';
 } else if (baseUrl) {
     console.log('Configuring Anthropic provider with base URL:', baseUrl);
     config.models = config.models || {};
@@ -275,20 +340,43 @@ EOFNODE
 # START GATEWAY
 # ============================================================
 # Note: R2 backup sync is handled by the Worker's cron trigger
-echo "Starting Moltbot Gateway..."
+echo "Starting OpenClaw Gateway..."
 echo "Gateway will be available on port 18789"
 
 # Clean up stale lock files
-rm -f /tmp/clawdbot-gateway.lock 2>/dev/null || true
+rm -f /tmp/openclaw-gateway.lock 2>/dev/null || true
 rm -f "$CONFIG_DIR/gateway.lock" 2>/dev/null || true
 
 BIND_MODE="lan"
 echo "Dev mode: ${CLAWDBOT_DEV_MODE:-false}, Bind mode: $BIND_MODE"
 
+# Function to start Feishu Bridge after Gateway is ready
+start_feishu_bridge() {
+    if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ]; then
+        echo "Waiting for Gateway to be ready before starting Feishu Bridge..."
+        # Wait for gateway to be ready using curl
+        for i in $(seq 1 30); do
+            if curl -s http://localhost:18789/ > /dev/null 2>&1; then
+                echo "Gateway is ready, starting Feishu Bridge..."
+                /usr/local/bin/clawdbot-bridge start fs_app_id="$FEISHU_APP_ID" fs_app_secret="$FEISHU_APP_SECRET" agent_id=main
+                echo "Feishu Bridge started"
+                return 0
+            fi
+            echo "Waiting for Gateway... ($i/30)"
+            sleep 2
+        done
+        echo "Warning: Gateway did not become ready in time, Feishu Bridge not started"
+    fi
+}
+
+# Start Feishu bridge in background after Gateway starts
+(start_feishu_bridge) &
+
+# Note: CLAWDBOT_GATEWAY_TOKEN env var name kept for backward compatibility
 if [ -n "$CLAWDBOT_GATEWAY_TOKEN" ]; then
     echo "Starting gateway with token auth..."
-    exec clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind "$BIND_MODE" --token "$CLAWDBOT_GATEWAY_TOKEN"
+    exec openclaw gateway --port 18789 --verbose --allow-unconfigured --bind "$BIND_MODE" --token "$CLAWDBOT_GATEWAY_TOKEN"
 else
     echo "Starting gateway with device pairing (no token)..."
-    exec clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind "$BIND_MODE"
+    exec openclaw gateway --port 18789 --verbose --allow-unconfigured --bind "$BIND_MODE"
 fi

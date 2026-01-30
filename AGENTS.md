@@ -4,13 +4,13 @@ Guidelines for AI agents working on this codebase.
 
 ## Project Overview
 
-This is a Cloudflare Worker that runs [Moltbot](https://molt.bot/) in a Cloudflare Sandbox container. It provides:
-- Proxying to the Moltbot gateway (web UI + WebSocket)
+This is a Cloudflare Worker that runs [OpenClaw](https://openclaw.ai/) (formerly Moltbot) in a Cloudflare Sandbox container. It provides:
+- Proxying to the OpenClaw gateway (web UI + WebSocket)
 - Admin UI at `/_admin/` for device management
 - API endpoints at `/api/*` for device pairing
 - Debug endpoints at `/debug/*` for troubleshooting
 
-**Note:** The CLI tool is still named `clawdbot` (upstream hasn't renamed yet), so CLI commands and internal config paths still use that name.
+**Note:** As of 2026.1.29, the CLI was renamed from `clawdbot` to `openclaw`. Config paths moved from `~/.clawdbot/` to `~/.openclaw/`. The Feishu bridge (`clawdbot-bridge`) retains its original name.
 
 ## Project Structure
 
@@ -49,10 +49,9 @@ src/
 
 ### CLI Commands
 
-When calling the moltbot CLI from the worker, always include `--url ws://localhost:18789`.
-Note: The CLI is still named `clawdbot` until upstream renames it:
+When calling the OpenClaw CLI from the worker, always include `--url ws://localhost:18789`:
 ```typescript
-sandbox.startProcess('clawdbot devices list --json --url ws://localhost:18789')
+sandbox.startProcess('openclaw devices list --json --url ws://localhost:18789')
 ```
 
 CLI commands take 10-15 seconds due to WebSocket connection overhead. Use `waitForProcess()` helper in `src/routes/api.ts`.
@@ -136,9 +135,9 @@ Browser
 | File | Purpose |
 |------|---------|
 | `src/index.ts` | Worker that manages sandbox lifecycle and proxies requests |
-| `Dockerfile` | Container image based on `cloudflare/sandbox` with Node 22 + Moltbot |
-| `start-moltbot.sh` | Startup script that configures moltbot from env vars and launches gateway |
-| `moltbot.json.template` | Default Moltbot configuration template |
+| `Dockerfile` | Container image based on `cloudflare/sandbox` with Node 22 + OpenClaw |
+| `start-moltbot.sh` | Startup script that configures OpenClaw from env vars and launches gateway |
+| `moltbot.json.template` | Default OpenClaw configuration template |
 | `wrangler.jsonc` | Cloudflare Worker + Container configuration |
 
 ## Local Development
@@ -174,9 +173,9 @@ The Dockerfile includes a cache bust comment. When changing `moltbot.json.templa
 
 ## Gateway Configuration
 
-Moltbot configuration is built at container startup:
+OpenClaw configuration is built at container startup:
 
-1. `moltbot.json.template` is copied to `~/.clawdbot/clawdbot.json` (internal path unchanged)
+1. `moltbot.json.template` is copied to `~/.openclaw/openclaw.json`
 2. `start-moltbot.sh` updates the config with values from environment variables
 3. Gateway starts with `--allow-unconfigured` flag (skips onboarding wizard)
 
@@ -186,24 +185,24 @@ These are the env vars passed TO the container (internal names):
 
 | Variable | Config Path | Notes |
 |----------|-------------|-------|
-| `ANTHROPIC_API_KEY` | (env var) | Moltbot reads directly from env |
-| `CLAWDBOT_GATEWAY_TOKEN` | `--token` flag | Mapped from `MOLTBOT_GATEWAY_TOKEN` |
+| `ANTHROPIC_API_KEY` | (env var) | OpenClaw reads directly from env |
+| `CLAWDBOT_GATEWAY_TOKEN` | `--token` flag | Mapped from `MOLTBOT_GATEWAY_TOKEN` (legacy name kept) |
 | `CLAWDBOT_DEV_MODE` | `controlUi.allowInsecureAuth` | Mapped from `DEV_MODE` |
 | `TELEGRAM_BOT_TOKEN` | `channels.telegram.botToken` | |
 | `DISCORD_BOT_TOKEN` | `channels.discord.token` | |
 | `SLACK_BOT_TOKEN` | `channels.slack.botToken` | |
 | `SLACK_APP_TOKEN` | `channels.slack.appToken` | |
 
-## Moltbot Config Schema
+## OpenClaw Config Schema
 
-Moltbot has strict config validation. Common gotchas:
+OpenClaw has strict config validation. Common gotchas:
 
 - `agents.defaults.model` must be `{ "primary": "model/name" }` not a string
 - `gateway.mode` must be `"local"` for headless operation
 - No `webchat` channel - the Control UI is served automatically
 - `gateway.bind` is not a config option - use `--bind` CLI flag
 
-See [Moltbot docs](https://docs.molt.bot/gateway/configuration) for full schema.
+See [OpenClaw docs](https://docs.openclaw.ai/gateway/configuration) for full schema.
 
 ## Common Tasks
 
