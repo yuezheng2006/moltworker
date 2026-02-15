@@ -12,6 +12,10 @@ This is a Cloudflare Worker that runs [OpenClaw](https://github.com/openclaw/ope
 
 **Note:** The CLI tool and npm package are now named `openclaw`. Config files use `.openclaw/openclaw.json`. Legacy `.clawdbot` paths are supported for backward compatibility during transition.
 
+### Repository / PR policy
+
+**Do not create MR/PR to the source repo (origin / cloudflare/moltworker).** This repo is a fork; work and push only to the fork. Do not open pull requests against `cloudflare/moltworker`.
+
 ## Project Structure
 
 ```
