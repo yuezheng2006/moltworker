@@ -22,6 +22,7 @@ RUN npm install -g pnpm
 
 # Install OpenClaw (formerly clawdbot/moltbot)
 # Pin to specific version for reproducible builds
+# Note: OpenClaw 2026.2.14+ includes built-in feishu support
 RUN npm install -g openclaw@2026.2.14 \
     && openclaw --version
 
@@ -31,18 +32,8 @@ RUN mkdir -p /root/.openclaw/extensions \
     && mkdir -p /root/clawd \
     && mkdir -p /root/clawd/skills
 
-# Install Feishu (Lark) channel plugin - patch workspace:* to openclaw version then npm install
-RUN cd /tmp \
-    && npm pack @openclaw/feishu \
-    && tar -xzf openclaw-feishu-*.tgz \
-    && mv package /root/.openclaw/extensions/feishu \
-    && cd /root/.openclaw/extensions/feishu \
-    && sed -i 's/"openclaw": "workspace:\*"/"openclaw": "2026.2.14"/' package.json \
-    && npm install --legacy-peer-deps --omit=dev \
-    && rm -f /tmp/openclaw-feishu-*.tgz
-
 # Copy startup script
-# Build cache bust: 2026-02-15-v35-remove-feishu-duplicate
+# Build cache bust: 2026-02-15-v36-remove-manual-feishu-install
 COPY start-openclaw.sh /usr/local/bin/start-openclaw.sh
 RUN chmod +x /usr/local/bin/start-openclaw.sh
 
