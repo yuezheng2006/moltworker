@@ -42,7 +42,7 @@ RUN cd /tmp \
     && rm -f /tmp/openclaw-feishu-*.tgz
 
 # Copy startup script
-# Build cache bust: 2026-02-15-v34-fix-version-pin
+# Build cache bust: 2026-02-15-v35-remove-feishu-duplicate
 COPY start-openclaw.sh /usr/local/bin/start-openclaw.sh
 RUN chmod +x /usr/local/bin/start-openclaw.sh
 

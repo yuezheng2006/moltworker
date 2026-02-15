@@ -131,6 +131,13 @@ else
 fi
 
 # ============================================================
+# CLEANUP DUPLICATE PLUGINS
+# ============================================================
+# Remove manually installed feishu plugin that conflicts with built-in
+rm -rf /root/.openclaw/extensions/feishu 2>/dev/null || true
+echo "Cleaned up duplicate plugins"
+
+# ============================================================
 # PATCH CONFIG (channels, gateway auth, trusted proxies)
 # ============================================================
 # openclaw onboard handles provider/model config, but we need to patch in:
