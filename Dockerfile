@@ -23,7 +23,7 @@ RUN npm install -g pnpm
 # Install OpenClaw (formerly clawdbot/moltbot)
 # Pin to specific version for reproducible builds
 # Note: OpenClaw 2026.2.14+ includes built-in feishu support
-RUN npm install -g openclaw@2026.2.14 \
+RUN npm install -g openclaw@2026.2.15 \
     && openclaw --version
 
 # Create OpenClaw directories first (plugin install needs .openclaw)
